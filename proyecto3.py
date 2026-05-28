@@ -68,20 +68,14 @@ def create_puzzle():
     print("  REGISTRAR ROMPECABEZAS")
     print("══════════════════════════════════")
 
-    pid        = ask_int("ID del rompecabezas: ")
-    name       = input("Nombre: ").strip()
-    brand      = input("Marca: ").strip()
-    material   = input("Material: ").strip()
-    theme      = input("Temática: ").strip()
-    shape      = ask("Forma (regular/irregular): ", valid=["regular", "irregular"])
-    total      = ask_int("Total de piezas: ")
+    pid   = ask_int("ID del rompecabezas: ")
+    name  = input("Nombre: ").strip()
+    shape = ask("Forma (regular/irregular): ", valid=["regular", "irregular"])
 
     run("""
         MERGE (r:Puzzle {id: $id})
-        SET r.name=$name, r.brand=$brand, r.material=$material,
-            r.theme=$theme, r.shape=$shape, r.total_pieces=$total
-    """, id=pid, name=name, brand=brand, material=material,
-         theme=theme, shape=shape, total=total)
+        SET r.name=$name, r.shape=$shape
+    """, id=pid, name=name, shape=shape)
 
     print(f"  ✓ Rompecabezas '{name}' creado.\n")
     return pid, shape
@@ -288,6 +282,32 @@ def solve_puzzle(puzzle_id, shape):
         print("\n  ✓ Rompecabezas completo. Todas las piezas disponibles.")
 
 # ─────────────────────────────────────────────
+#  LISTAR Y SELECCIONAR ROMPECABEZAS
+# ─────────────────────────────────────────────
+def list_puzzles():
+    return run("MATCH (r:Puzzle) RETURN r.id AS id, r.name AS name, r.shape AS shape ORDER BY r.id")
+
+def select_puzzle():
+    puzzles = list_puzzles()
+    if not puzzles:
+        print("  No hay rompecabezas registrados aún.")
+        return None, "regular"
+
+    print("\n  Rompecabezas existentes:")
+    for p in puzzles:
+        print(f"    [{p['id']}] {p['name']} ({p['shape']})")
+
+    pid = ask_int("\n  Selecciona un ID: ")
+    match = [p for p in puzzles if p["id"] == pid]
+    if not match:
+        print("  ID no encontrado.")
+        return None, "regular"
+
+    shape = match[0]["shape"]
+    print(f"  Rompecabezas seleccionado: {match[0]['name']}\n")
+    return pid, shape
+
+# ─────────────────────────────────────────────
 #  MENÚ PRINCIPAL
 # ─────────────────────────────────────────────
 def menu():
@@ -296,10 +316,29 @@ def menu():
     puzzle_id = None
     shape     = "regular"
 
+    # Al arrancar, listar rompecabezas existentes
+    puzzles = list_puzzles()
+    if puzzles:
+        print("\n  Rompecabezas existentes en la base de datos:")
+        for p in puzzles:
+            print(f"    [{p['id']}] {p['name']} ({p['shape']})")
+        raw = input("\n  Ingresa un ID para continuar (Enter para omitir): ").strip()
+        if raw:
+            try:
+                pid = int(raw)
+                match = [p for p in puzzles if p["id"] == pid]
+                if match:
+                    puzzle_id = pid
+                    shape     = match[0]["shape"]
+                    print(f"  Cargado: {match[0]['name']}\n")
+            except ValueError:
+                pass
+
     while True:
         print("\n╔══════════════════════════════════╗")
         print("║   GESTOR DE ROMPECABEZAS — Neo4j ║")
         print("╠══════════════════════════════════╣")
+        print("║  0. Cambiar rompecabezas activo   ║")
         print("║  1. Crear rompecabezas            ║")
         print("║  2. Agregar piezas                ║")
         print("║  3. Agregar conexiones            ║")
@@ -310,37 +349,40 @@ def menu():
 
         if puzzle_id:
             print(f"  Rompecabezas activo: ID={puzzle_id} | Forma={shape}")
+        else:
+            print("  Sin rompecabezas activo.")
 
-        opt = ask("\nOpción: ", valid=["1","2","3","4","5","6"])
+        opt = ask("\nOpción: ", valid=["0","1","2","3","4","5","6"])
 
-        if opt == "1":
+        if opt == "0":
+            puzzle_id, shape = select_puzzle()
+
+        elif opt == "1":
             puzzle_id, shape = create_puzzle()
 
         elif opt == "2":
             if not puzzle_id:
-                puzzle_id = ask_int("ID del rompecabezas a usar: ")
-                res = run("MATCH (r:Puzzle {id: $id}) RETURN r.shape AS shape", id=puzzle_id)
-                shape = res[0]["shape"] if res else "regular"
-            create_pieces(puzzle_id)
+                puzzle_id, shape = select_puzzle()
+            if puzzle_id:
+                create_pieces(puzzle_id)
 
         elif opt == "3":
             if not puzzle_id:
-                puzzle_id = ask_int("ID del rompecabezas a usar: ")
-                res = run("MATCH (r:Puzzle {id: $id}) RETURN r.shape AS shape", id=puzzle_id)
-                shape = res[0]["shape"] if res else "regular"
-            create_connections(shape)
+                puzzle_id, shape = select_puzzle()
+            if puzzle_id:
+                create_connections(shape)
 
         elif opt == "4":
             if not puzzle_id:
-                puzzle_id = ask_int("ID del rompecabezas: ")
-            visualize_puzzle(puzzle_id)
+                puzzle_id, shape = select_puzzle()
+            if puzzle_id:
+                visualize_puzzle(puzzle_id)
 
         elif opt == "5":
             if not puzzle_id:
-                puzzle_id = ask_int("ID del rompecabezas: ")
-                res = run("MATCH (r:Puzzle {id: $id}) RETURN r.shape AS shape", id=puzzle_id)
-                shape = res[0]["shape"] if res else "regular"
-            solve_puzzle(puzzle_id, shape)
+                puzzle_id, shape = select_puzzle()
+            if puzzle_id:
+                solve_puzzle(puzzle_id, shape)
 
         elif opt == "6":
             print("\n  Hasta luego.\n")
