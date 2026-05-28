@@ -21,7 +21,7 @@ ALL_DIRECTIONS       = CARDINAL_DIRECTIONS + DIAGONAL_DIRECTIONS
 # ─────────────────────────────────────────────
 #  DRIVER
 # ─────────────────────────────────────────────
-driver = GraphDatabase.driver(URI, auth=(USER, PASSWORD))
+driver = GraphDatabase.driver(URI, auth=(USER, PASSWORD), notifications_min_severity="OFF")
 
 def run(query, **params):
     with driver.session() as session:
@@ -211,7 +211,7 @@ def visualize_puzzle(puzzle_id):
     print("  Leyenda: [N] = disponible  |  [XN] = faltante\n")
 
 # ─────────────────────────────────────────────
-#  ALGORITMO: ARMAR ROMPECABEZAS (BFS)
+#  ALGORITMO: ARMAR ROMPECABEZAS (BFS en Python)
 # ─────────────────────────────────────────────
 def solve_puzzle(puzzle_id, shape):
     print("\n══════════════════════════════════")
@@ -220,51 +220,63 @@ def solve_puzzle(puzzle_id, shape):
 
     start_id = ask_int("ID de pieza inicial: ")
     dirs     = available_directions(shape)
-    dir_str  = "|".join(dirs)
 
-    # BFS desde la pieza inicial usando todas las direcciones posibles
-    result = run(f"""
-        MATCH (start:Piece {{id: $start_id, puzzle_id: $puzzle_id}})
-        CALL apoc.path.bfsTree(start, {{
-            relationshipFilter: '{dir_str}>',
-            maxLevel: -1
-        }}) YIELD path
-        WITH nodes(path) AS pieces, relationships(path) AS rels
-        UNWIND range(0, size(rels)-1) AS i
-        WITH pieces[i] AS from, rels[i] AS rel, pieces[i+1] AS to
-        RETURN from.id AS from_id, from.available AS from_avail,
-               type(rel) AS direction,
-               to.id AS to_id, to.available AS to_avail
-        ORDER BY from.y, from.x
+    # Verificar que la pieza inicial existe en este puzzle
+    check = run("""
+        MATCH (p:Piece {id: $start_id, puzzle_id: $puzzle_id})
+        RETURN p.id AS id
     """, start_id=start_id, puzzle_id=puzzle_id)
 
-    if not result:
-        # Fallback sin APOC
-        result = run(f"""
-            MATCH (start:Piece {{id: $start_id, puzzle_id: $puzzle_id}})
-            MATCH path = (start)-[:{dir_str}*]->(p:Piece)
-            WITH relationships(path)[-1] AS rel,
-                 nodes(path)[-2] AS from,
-                 nodes(path)[-1] AS to
-            RETURN from.id AS from_id, from.available AS from_avail,
-                   type(rel) AS direction,
-                   to.id AS to_id, to.available AS to_avail
-            ORDER BY length(path)
-        """, start_id=start_id, puzzle_id=puzzle_id)
+    if not check:
+        print(f"  Pieza {start_id} no encontrada en el rompecabezas {puzzle_id}.")
+        return
 
-    if not result:
-        print(f"  No se encontraron conexiones desde la pieza {start_id}.")
+    # Traer todas las conexiones del puzzle de una sola consulta
+    dir_str = "|".join(dirs)
+    edges = run(f"""
+        MATCH (a:Piece {{puzzle_id: $puzzle_id}})-[r:{dir_str}]->(b:Piece {{puzzle_id: $puzzle_id}})
+        RETURN a.id AS from_id, a.available AS from_avail,
+               type(r) AS direction,
+               b.id AS to_id, b.available AS to_avail
+    """, puzzle_id=puzzle_id)
+
+    if not edges:
+        print(f"  No se encontraron conexiones en el rompecabezas {puzzle_id}.")
+        return
+
+    # Construir lista de adyacencia en Python
+    adj = {}
+    edge_data = {}
+    for row in edges:
+        f, t = row["from_id"], row["to_id"]
+        adj.setdefault(f, []).append(t)
+        edge_data[(f, t)] = row
+
+    # BFS desde la pieza inicial
+    visited = {start_id}
+    queue   = [start_id]
+    steps   = []
+
+    while queue:
+        current = queue.pop(0)
+        for neighbor in adj.get(current, []):
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append(neighbor)
+                steps.append(edge_data[(current, neighbor)])
+
+    if not steps:
+        print(f"  La pieza {start_id} no tiene conexiones registradas.")
         return
 
     print(f"\n  Pasos para armar desde pieza {start_id}:\n")
-    step = 1
     missing = []
 
-    for row in result:
-        from_id    = row["from_id"]
-        to_id      = row["to_id"]
-        direction  = row["direction"]
-        to_avail   = row["to_avail"]
+    for i, row in enumerate(steps, 1):
+        from_id   = row["from_id"]
+        to_id     = row["to_id"]
+        direction = row["direction"]
+        to_avail  = row["to_avail"]
 
         if not to_avail:
             missing.append(to_id)
@@ -272,8 +284,7 @@ def solve_puzzle(puzzle_id, shape):
         else:
             status = "✓"
 
-        print(f"  Paso {step:3d}: Pieza {from_id:3d} → [{direction}] → Pieza {to_id:3d}  {status}")
-        step += 1
+        print(f"  Paso {i:3d}: Pieza {from_id:3d} → [{direction}] → Pieza {to_id:3d}  {status}")
 
     if missing:
         print(f"\n  ⚠ Piezas faltantes detectadas: {missing}")
