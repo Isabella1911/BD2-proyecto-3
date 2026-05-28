@@ -87,7 +87,7 @@ class PuzzleSolverGUI:
     def _build_ui(self):
         bar = tk.Frame(self.root, bg=C_BG)
         bar.pack(fill=tk.X, padx=12, pady=(10, 4))
-        tk.Label(bar, text="Rompecabezas:", bg=C_BG, font=("Arial", 11)).pack(side=tk.LEFT)
+        tk.Label(bar, text="Rompecabezas:", bg=C_BG, fg="black", font=("Arial", 11)).pack(side=tk.LEFT)
         self.puzzle_var   = tk.StringVar()
         self.puzzle_combo = ttk.Combobox(bar, textvariable=self.puzzle_var,
                                          state="readonly", width=34)
@@ -109,33 +109,33 @@ class PuzzleSolverGUI:
             (C_MISSING, "Faltante"),
         ]:
             tk.Label(leg, bg=color, width=2, relief="solid", bd=1).pack(side=tk.LEFT, padx=(8, 2))
-            tk.Label(leg, text=label, bg=C_BG, font=("Arial", 9)).pack(side=tk.LEFT)
+            tk.Label(leg, text=label, bg=C_BG, fg="black", font=("Arial", 9)).pack(side=tk.LEFT)
 
         # Connector legend
         conn_leg = tk.Frame(self.root, bg=C_BG)
         conn_leg.pack(pady=(0, 2))
-        tk.Label(conn_leg, text="Conectores:", bg=C_BG, font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=(8, 4))
-        tk.Label(conn_leg, text="▶ pestaña (saliente)", bg=C_BG, font=("Arial", 9)).pack(side=tk.LEFT, padx=4)
-        tk.Label(conn_leg, text="◀ ranura (entrante)", bg=C_BG, font=("Arial", 9)).pack(side=tk.LEFT, padx=4)
+        tk.Label(conn_leg, text="Conectores:", bg=C_BG, fg="black", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=(8, 4))
+        tk.Label(conn_leg, text="▶ pestaña (saliente)", bg=C_BG, fg="black", font=("Arial", 9)).pack(side=tk.LEFT, padx=4)
+        tk.Label(conn_leg, text="◀ ranura (entrante)", bg=C_BG, fg="black", font=("Arial", 9)).pack(side=tk.LEFT, padx=4)
 
         self.step_label = tk.Label(self.root, text="Selecciona un rompecabezas para comenzar.",
-                                   font=("Arial", 12, "bold"), bg=C_BG)
+                                   font=("Arial", 12, "bold"), bg=C_BG, fg="black")
         self.step_label.pack(pady=(6, 2))
 
         self.desc_label = tk.Label(self.root, text="", font=("Arial", 11), bg=C_BG,
-                                   wraplength=660, justify="center")
+                                   fg="black", wraplength=660, justify="center")
         self.desc_label.pack(pady=(0, 6))
 
         ctrl = tk.Frame(self.root, bg=C_BG)
         ctrl.pack(pady=(0, 14))
         self.btn_prev = tk.Button(ctrl, text="◀  Anterior", width=13, command=self._prev_step,
-                                  state=tk.DISABLED, font=("Arial", 11), bg="#DDDDDD")
+                                  state=tk.DISABLED, font=("Arial", 11), bg="#DDDDDD", fg="black")
         self.btn_prev.pack(side=tk.LEFT, padx=6)
         self.btn_start = tk.Button(ctrl, text="Elegir pieza inicial", width=18,
-                                   command=self._choose_start, font=("Arial", 11), bg=C_START)
+                                   command=self._choose_start, font=("Arial", 11), bg=C_START, fg="black")
         self.btn_start.pack(side=tk.LEFT, padx=6)
         self.btn_next = tk.Button(ctrl, text="Siguiente  ▶", width=13, command=self._next_step,
-                                  state=tk.DISABLED, font=("Arial", 11), bg="#DDDDDD")
+                                  state=tk.DISABLED, font=("Arial", 11), bg="#DDDDDD", fg="black")
         self.btn_next.pack(side=tk.LEFT, padx=6)
 
     def _load_puzzles(self):
@@ -277,7 +277,7 @@ class PuzzleSolverGUI:
 
         label = str(pid) if p["available"] else f"{pid}\n(falta)"
         self.canvas.create_text(cx, cy, text=label,
-                        font=("Arial", 10, "bold"), fill="#222222", tags=tag)
+                        font=("Arial", 10, "bold"), fill="black", tags=tag)
 
     def _draw_arrow(self, from_id, to_id):
         fp = self.pieces[from_id]
