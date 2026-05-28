@@ -28,36 +28,25 @@ DIR_ES = {
     "DOWN_RIGHT": "ABAJO-DERECHA ↘", "DOWN_LEFT": "ABAJO-IZQUIERDA ↙",
 }
 
-# ── puzzle-piece shape ───────────────────────────────────────────────────────
-# For A -[RIGHT]-> B:
-#   A's RIGHT edge → outward tab   (bump protruding outside the body)
-#   B's LEFT  edge → inward  hole  (notch cut into the body)
-#
-# Arc angles in Tkinter canvas (0°=3-o'clock, positive=counterclockwise on screen):
-#   outward tab points AWAY from piece center → the outward-facing semicircle
-#   inward  hole points TOWARD piece center   → the inward-facing semicircle
-
-OUTWARD_ARC = {          # (start°, extent°) for the bump
-    "RIGHT": (270, 180), # right-facing half
+OUTWARD_ARC = {         
+    "RIGHT": (270, 180),
     "LEFT":  (90,  180), # left-facing half
-    "UP":    (0,   180), # top-facing half  (screen-up = decreasing y)
+    "UP":    (0,   180), 
     "DOWN":  (180, 180), # bottom-facing half
 }
-INWARD_ARC = {           # (start°, extent°) for the notch (opposite half)
+INWARD_ARC = {          
     "RIGHT": (90,  180),
     "LEFT":  (270, 180),
     "UP":    (180, 180),
     "DOWN":  (0,   180),
 }
 
-# ── layout ────────────────────────────────────────────────────────────────────
-CELL_W  = 92   # grid cell width
-CELL_H  = 78   # grid cell height
-MARGIN  = 10   # gap between cell boundary and piece body edge
-TAB_R   = 8    # connector radius (tab protrudes / hole recedes by this amount)
-PAD     = 48   # canvas padding
+CELL_W  = 92  
+CELL_H  = 78  
+MARGIN  = 10   
+TAB_R   = 8   
+PAD     = 48   
 
-# ── colours ───────────────────────────────────────────────────────────────────
 C_UNPLACED = "#CCCCCC"
 C_PLACED   = "#7EC8E3"
 C_CURRENT  = "#FF9F45"
@@ -65,7 +54,7 @@ C_START    = "#FFD700"
 C_MISSING  = "#FF6B6B"
 C_BG       = "#F0F0F0"
 C_OUTLINE  = "#444444"
-C_CANVAS   = "#FFFFFF"  # canvas / "hole" colour
+C_CANVAS   = "#000000" 
 
 
 class PuzzleSolverGUI:
@@ -79,8 +68,8 @@ class PuzzleSolverGUI:
 
         self.puzzle_id    = None
         self.shape        = "regular"
-        self.pieces: dict = {}          # pid → {id, x, y, available}
-        self.connectors: dict = {}      # pid → {direction: 'out'|'in'|'flat'}
+        self.pieces: dict = {}          
+        self.connectors: dict = {}      
         self.steps: list  = []
         self.current_step = -1
         self.placed: set  = set()
@@ -89,12 +78,12 @@ class PuzzleSolverGUI:
         self._build_ui()
         self._load_puzzles()
 
-    # ── Neo4j ─────────────────────────────────────────────────────────────────
+    # Neo4j 
     def _run(self, query, **params):
         with self.driver.session() as s:
             return s.run(query, **params).data()
 
-    # ── UI ────────────────────────────────────────────────────────────────────
+    # UI
     def _build_ui(self):
         bar = tk.Frame(self.root, bg=C_BG)
         bar.pack(fill=tk.X, padx=12, pady=(10, 4))
@@ -149,7 +138,6 @@ class PuzzleSolverGUI:
                                   state=tk.DISABLED, font=("Arial", 11), bg="#DDDDDD")
         self.btn_next.pack(side=tk.LEFT, padx=6)
 
-    # ── Puzzle loading ────────────────────────────────────────────────────────
     def _load_puzzles(self):
         puzzles = self._run(
             "MATCH (r:Puzzle) RETURN r.id AS id, r.name AS name, r.shape AS shape ORDER BY r.id"
@@ -186,12 +174,6 @@ class PuzzleSolverGUI:
         self.btn_prev.config(state=tk.DISABLED)
 
     def _load_connectors(self):
-        """
-        Derive connector type per (piece, direction) from the stored relationships.
-
-        A -[RIGHT]-> B  →  A.RIGHT = 'out' (tab),  B.LEFT = 'in' (hole)
-        All unmentioned edges default to 'flat' (border / no connector).
-        """
         dirs    = CARDINAL_DIRECTIONS if self.shape == "regular" else ALL_DIRECTIONS
         dir_str = "|".join(dirs)
 
@@ -200,20 +182,18 @@ class PuzzleSolverGUI:
             RETURN a.id AS from_id, type(r) AS direction, b.id AS to_id
         """, pid=self.puzzle_id)
 
-        # Initialise every cardinal edge as flat
         self.connectors = {pid: {d: "flat" for d in CARDINAL_DIRECTIONS}
                            for pid in self.pieces}
 
         for row in edges:
             f, t, d = row["from_id"], row["to_id"], row["direction"]
             if d not in CARDINAL_DIRECTIONS:
-                continue   # diagonal connectors are not drawn on rectangular bodies
+                continue
             if f in self.connectors:
                 self.connectors[f][d] = "out"
             if t in self.connectors:
                 self.connectors[t][INVERSE_DIRECTION[d]] = "in"
 
-    # ── Canvas helpers ────────────────────────────────────────────────────────
     def _resize_canvas(self):
         if not self.pieces:
             return
@@ -227,31 +207,20 @@ class PuzzleSolverGUI:
         return PAD + gx * CELL_W + CELL_W // 2, PAD + gy * CELL_H + CELL_H // 2
 
     def _draw_piece(self, pid, fill):
-        """
-        Draw a puzzle piece at its grid position using fill colour `fill`.
-
-        Each cardinal edge is drawn as:
-          'out'  → a filled semicircle (tab) protruding OUTSIDE the body
-          'in'   → a white semicircle (hole) cut INTO the body
-          'flat' → plain edge, no connector
-        """
         p  = self.pieces[pid]
         cx, cy = self._cell_center(p["x"], p["y"])
-        hw = (CELL_W - 2 * MARGIN) // 2   # half body width
-        hh = (CELL_H - 2 * MARGIN) // 2   # half body height
+        hw = (CELL_W - 2 * MARGIN) // 2   
+        hh = (CELL_H - 2 * MARGIN) // 2   
         tag = f"piece_{pid}"
         conns = self.connectors.get(pid, {})
 
         self.canvas.delete(tag)
 
-        # ── 1. Body rectangle (fill only, no outline yet) ─────────────────
         self.canvas.create_rectangle(
             cx - hw, cy - hh, cx + hw, cy + hh,
             fill=fill, outline="", tags=tag
         )
 
-        # ── 2. Cardinal connectors ────────────────────────────────────────
-        #  edge midpoints (on the body boundary):
         edge_pos = {
             "RIGHT": (cx + hw, cy),
             "LEFT":  (cx - hw, cy),
@@ -264,25 +233,17 @@ class PuzzleSolverGUI:
             bbox = (ex - r, ey - r, ex + r, ey + r)
 
             if conn == "out":
-                # Filled semicircle protruding outward — same colour as body
                 s, ext = OUTWARD_ARC[direc]
                 self.canvas.create_arc(*bbox, start=s, extent=ext,
                                        fill=fill, outline=C_OUTLINE,
                                        style=tk.CHORD, width=1, tags=tag)
 
             elif conn == "in":
-                # White semicircle cut into the body
-                # Drawing it on top of the body fill "punches" the hole.
                 s, ext = INWARD_ARC[direc]
                 self.canvas.create_arc(*bbox, start=s, extent=ext,
                                        fill=C_CANVAS, outline=C_OUTLINE,
                                        style=tk.CHORD, width=1, tags=tag)
 
-        # ── 3. Body outline on top ────────────────────────────────────────
-        # The inward arcs (white fill) overwrite the body fill but the
-        # rectangle outline drawn here would close the hole mouth.
-        # Solution: draw the outline as four separate lines, leaving a gap
-        # at each edge where a connector sits.
         for direc, (ex, ey) in edge_pos.items():
             conn = conns.get(direc, "flat")
             if direc == "RIGHT":
@@ -291,35 +252,29 @@ class PuzzleSolverGUI:
                 x0, y0, x1, y1 = cx - hw, cy - hh, cx - hw, cy + hh
             elif direc == "UP":
                 x0, y0, x1, y1 = cx - hw, cy - hh, cx + hw, cy - hh
-            else:  # DOWN
+            else: 
                 x0, y0, x1, y1 = cx - hw, cy + hh, cx + hw, cy + hh
 
             if conn == "flat":
-                # Full edge line
                 self.canvas.create_line(x0, y0, x1, y1,
                                         fill=C_OUTLINE, width=2, tags=tag)
             else:
-                # Two short segments on either side of the connector gap
                 if direc in ("RIGHT", "LEFT"):
-                    # Vertical edge: draw above and below the connector
                     self.canvas.create_line(x0, y0, x0, ey - r,
                                             fill=C_OUTLINE, width=2, tags=tag)
                     self.canvas.create_line(x0, ey + r, x1, y1,
                                             fill=C_OUTLINE, width=2, tags=tag)
                 else:
-                    # Horizontal edge: draw left and right of the connector
                     self.canvas.create_line(x0, y0, ex - r, y0,
                                             fill=C_OUTLINE, width=2, tags=tag)
                     self.canvas.create_line(ex + r, y0, x1, y1,
                                             fill=C_OUTLINE, width=2, tags=tag)
 
-        # Corners
         for cx2, cy2 in [(cx-hw, cy-hh), (cx+hw, cy-hh),
                          (cx-hw, cy+hh), (cx+hw, cy+hh)]:
             self.canvas.create_rectangle(cx2-1, cy2-1, cx2+1, cy2+1,
                                          fill=C_OUTLINE, outline="", tags=tag)
 
-        # ── 4. Piece ID ───────────────────────────────────────────────────
         label = str(pid) if p["available"] else f"{pid}\n(falta)"
         self.canvas.create_text(cx, cy, text=label,
                                 font=("Arial", 10, "bold"), tags=tag)
@@ -345,7 +300,6 @@ class PuzzleSolverGUI:
                 p = self.pieces[pid]
                 self._draw_piece(pid, C_PLACED if p["available"] else C_MISSING)
 
-    # ── Start-piece dialog ────────────────────────────────────────────────────
     def _choose_start(self):
         if not self.pieces:
             messagebox.showwarning("Sin datos", "Primero carga un rompecabezas.")
@@ -361,7 +315,6 @@ class PuzzleSolverGUI:
         self.start_id = start
         self._compute_steps()
 
-    # ── BFS ───────────────────────────────────────────────────────────────────
     def _compute_steps(self):
         dirs    = CARDINAL_DIRECTIONS if self.shape == "regular" else ALL_DIRECTIONS
         dir_str = "|".join(dirs)
@@ -410,7 +363,6 @@ class PuzzleSolverGUI:
         self.btn_next.config(state=tk.NORMAL if self.steps else tk.DISABLED)
         self.btn_prev.config(state=tk.DISABLED)
 
-    # ── Step navigation ───────────────────────────────────────────────────────
     def _next_step(self):
         if self.current_step >= len(self.steps) - 1:
             return
