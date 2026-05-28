@@ -54,7 +54,7 @@ C_START    = "#FFD700"
 C_MISSING  = "#FF6B6B"
 C_BG       = "#F0F0F0"
 C_OUTLINE  = "#444444"
-C_CANVAS   = "#000000" 
+C_CANVAS   = "#ffffff"
 
 
 class PuzzleSolverGUI:
@@ -277,7 +277,7 @@ class PuzzleSolverGUI:
 
         label = str(pid) if p["available"] else f"{pid}\n(falta)"
         self.canvas.create_text(cx, cy, text=label,
-                                font=("Arial", 10, "bold"), tags=tag)
+                        font=("Arial", 10, "bold"), fill="#222222", tags=tag)
 
     def _draw_arrow(self, from_id, to_id):
         fp = self.pieces[from_id]
