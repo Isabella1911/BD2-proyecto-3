@@ -52,7 +52,6 @@ def available_directions(shape):
 
 def init_db():
     run("DROP CONSTRAINT piece_id IF EXISTS")
-    run("CREATE CONSTRAINT piece_key IF NOT EXISTS FOR (p:Piece) REQUIRE (p.puzzle_id, p.id) IS NODE KEY")
     run("CREATE CONSTRAINT puzzle_id IF NOT EXISTS FOR (r:Puzzle) REQUIRE r.id IS UNIQUE")
     print("  ✓ Constraints listos.\n")
 
@@ -159,6 +158,33 @@ def create_connections(puzzle_id, shape):
         print(f"  ✓ ({origin})-[:{direction}]->({dest}) creada.")
 
     print(f"\n  ✓ {count} conexiones registradas.")
+
+def auto_connect_grid(puzzle_id):
+    print("\n══════════════════════════════════")
+    print("  AUTO-CONECTAR GRID")
+    print("══════════════════════════════════")
+
+    directions = [
+        ("UP",    0, -1),
+        ("DOWN",  0,  1),
+        ("LEFT", -1,  0),
+        ("RIGHT", 1,  0),
+    ]
+
+    total = 0
+    for rel, dx, dy in directions:
+        result = run(f"""
+            MATCH (a:Piece {{puzzle_id: $puzzle_id}}),
+                  (b:Piece {{puzzle_id: $puzzle_id}})
+            WHERE b.x = a.x + $dx AND b.y = a.y + $dy
+            MERGE (a)-[:{rel}]->(b)
+            RETURN count(*) AS created
+        """, puzzle_id=puzzle_id, dx=dx, dy=dy)
+        n = result[0]["created"] if result else 0
+        total += n
+        print(f"  ✓ {n:3d} relaciones {rel}")
+
+    print(f"\n  ✓ {total} conexiones creadas en total.")
 
 def visualize_puzzle(puzzle_id):
     pieces = run("""
@@ -336,9 +362,10 @@ def menu():
         print("║  1. Crear rompecabezas            ║")
         print("║  2. Agregar piezas                ║")
         print("║  3. Agregar conexiones            ║")
-        print("║  4. Ver grid en consola           ║")
-        print("║  5. Resolver rompecabezas (BFS)   ║")
-        print("║  6. Salir                         ║")
+        print("║  4. Auto-conectar grid cuadrado   ║")
+        print("║  5. Ver grid en consola           ║")
+        print("║  6. Resolver rompecabezas (BFS)   ║")
+        print("║  7. Salir                         ║")
         print("╚══════════════════════════════════╝")
 
         if puzzle_id:
@@ -346,7 +373,7 @@ def menu():
         else:
             print("  Sin rompecabezas activo.")
 
-        opt = ask("\nOpción: ", valid=["0","1","2","3","4","5","6"])
+        opt = ask("\nOpción: ", valid=["0","1","2","3","4","5","6","7"])
 
         if opt == "0":
             puzzle_id, shape = select_puzzle()
@@ -370,15 +397,21 @@ def menu():
             if not puzzle_id:
                 puzzle_id, shape = select_puzzle()
             if puzzle_id:
-                visualize_puzzle(puzzle_id)
+                auto_connect_grid(puzzle_id)
 
         elif opt == "5":
             if not puzzle_id:
                 puzzle_id, shape = select_puzzle()
             if puzzle_id:
-                solve_puzzle(puzzle_id, shape)
+                visualize_puzzle(puzzle_id)
 
         elif opt == "6":
+            if not puzzle_id:
+                puzzle_id, shape = select_puzzle()
+            if puzzle_id:
+                solve_puzzle(puzzle_id, shape)
+
+        elif opt == "7":
             print("\n  Hasta luego.\n")
             driver.close()
             break
