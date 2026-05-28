@@ -386,7 +386,7 @@ class PuzzleSolverGUI:
         if avail:
             self.desc_label.config(
                 text=(
-                    f"Encaja la pieza  {to_id}  al  {DIR_ES[direc]}  de la pieza  {from_id}.\n"
+                    f"Encaja la pieza  {to_id}  en la siguiente dirección:  {DIR_ES[direc]}  de la pieza  {from_id}.\n"
                     f"La pestaña de la pieza {from_id} encaja en la ranura de la pieza {to_id}."
                 )
             )
