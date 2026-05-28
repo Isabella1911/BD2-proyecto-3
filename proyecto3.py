@@ -4,9 +4,6 @@ import os
 
 load_dotenv()
 
-# ─────────────────────────────────────────────
-#  CONFIGURACIÓN
-# ─────────────────────────────────────────────
 URI      = os.getenv("NEO4J_URI")
 USER     = os.getenv("NEO4J_USERNAME")
 PASSWORD = os.getenv("NEO4J_PASSWORD")
@@ -18,18 +15,19 @@ CARDINAL_DIRECTIONS  = ["UP", "DOWN", "LEFT", "RIGHT"]
 DIAGONAL_DIRECTIONS  = ["UP_RIGHT", "UP_LEFT", "DOWN_RIGHT", "DOWN_LEFT"]
 ALL_DIRECTIONS       = CARDINAL_DIRECTIONS + DIAGONAL_DIRECTIONS
 
-# ─────────────────────────────────────────────
-#  DRIVER
-# ─────────────────────────────────────────────
+INVERSE_DIRECTION = {
+    "UP": "DOWN", "DOWN": "UP",
+    "LEFT": "RIGHT", "RIGHT": "LEFT",
+    "UP_RIGHT": "DOWN_LEFT", "DOWN_LEFT": "UP_RIGHT",
+    "UP_LEFT": "DOWN_RIGHT", "DOWN_RIGHT": "UP_LEFT",
+}
+
 driver = GraphDatabase.driver(URI, auth=(USER, PASSWORD), notifications_min_severity="OFF")
 
 def run(query, **params):
     with driver.session() as session:
         return session.run(query, **params).data()
 
-# ─────────────────────────────────────────────
-#  HELPERS
-# ─────────────────────────────────────────────
 def ask(prompt, valid=None, default=None):
     while True:
         raw = input(prompt).strip()
@@ -52,17 +50,12 @@ def ask_int(prompt):
 def available_directions(shape):
     return CARDINAL_DIRECTIONS if shape == "regular" else ALL_DIRECTIONS
 
-# ─────────────────────────────────────────────
-#  INICIALIZACIÓN DE LA BD
-# ─────────────────────────────────────────────
 def init_db():
-    run("CREATE CONSTRAINT piece_id IF NOT EXISTS FOR (p:Piece) REQUIRE p.id IS UNIQUE")
+    run("DROP CONSTRAINT piece_id IF EXISTS")
+    run("CREATE CONSTRAINT piece_key IF NOT EXISTS FOR (p:Piece) REQUIRE (p.puzzle_id, p.id) IS NODE KEY")
     run("CREATE CONSTRAINT puzzle_id IF NOT EXISTS FOR (r:Puzzle) REQUIRE r.id IS UNIQUE")
     print("  ✓ Constraints listos.\n")
 
-# ─────────────────────────────────────────────
-#  CREAR ROMPECABEZAS
-# ─────────────────────────────────────────────
 def create_puzzle():
     print("\n══════════════════════════════════")
     print("  REGISTRAR ROMPECABEZAS")
@@ -80,9 +73,6 @@ def create_puzzle():
     print(f"  ✓ Rompecabezas '{name}' creado.\n")
     return pid, shape
 
-# ─────────────────────────────────────────────
-#  CREAR PIEZAS
-# ─────────────────────────────────────────────
 def create_pieces(puzzle_id):
     print("\n══════════════════════════════════")
     print("  REGISTRAR PIEZAS")
@@ -105,8 +95,8 @@ def create_pieces(puzzle_id):
         available = ask_bool("  ¿Disponible?")
 
         run("""
-            MERGE (p:Piece {id: $id})
-            SET p.x=$x, p.y=$y, p.available=$available, p.puzzle_id=$puzzle_id
+            MERGE (p:Piece {id: $id, puzzle_id: $puzzle_id})
+            SET p.x=$x, p.y=$y, p.available=$available
             WITH p
             MATCH (r:Puzzle {id: $puzzle_id})
             MERGE (p)-[:BELONGS_TO]->(r)
@@ -118,10 +108,7 @@ def create_pieces(puzzle_id):
     print(f"\n  ✓ {len(pieces)} piezas registradas.")
     return pieces
 
-# ─────────────────────────────────────────────
-#  CREAR CONEXIONES
-# ─────────────────────────────────────────────
-def create_connections(shape):
+def create_connections(puzzle_id, shape):
     dirs = available_directions(shape)
 
     print("\n══════════════════════════════════")
@@ -152,30 +139,27 @@ def create_connections(shape):
             print("  ID debe ser un número.")
             continue
 
-        # Verificar que ambas piezas existan
         exists = run("""
-            MATCH (a:Piece {id: $origin}), (b:Piece {id: $dest})
+            MATCH (a:Piece {id: $origin, puzzle_id: $puzzle_id}),
+                  (b:Piece {id: $dest,   puzzle_id: $puzzle_id})
             RETURN a, b
-        """, origin=origin, dest=dest)
+        """, origin=origin, dest=dest, puzzle_id=puzzle_id)
 
         if not exists:
-            print(f"  ✗ Piezas {origin} o {dest} no encontradas. Verifica los IDs.")
+            print(f"  ✗ Piezas {origin} o {dest} no encontradas en este rompecabezas.")
             continue
 
-        # Crear relación dinámica según dirección
         run(f"""
-            MATCH (a:Piece {{id: $origin}}), (b:Piece {{id: $dest}})
+            MATCH (a:Piece {{id: $origin, puzzle_id: $puzzle_id}}),
+                  (b:Piece {{id: $dest,   puzzle_id: $puzzle_id}})
             MERGE (a)-[:{direction}]->(b)
-        """, origin=origin, dest=dest)
+        """, origin=origin, dest=dest, puzzle_id=puzzle_id)
 
         count += 1
         print(f"  ✓ ({origin})-[:{direction}]->({dest}) creada.")
 
     print(f"\n  ✓ {count} conexiones registradas.")
 
-# ─────────────────────────────────────────────
-#  VISUALIZAR GRID EN CONSOLA
-# ─────────────────────────────────────────────
 def visualize_puzzle(puzzle_id):
     pieces = run("""
         MATCH (p:Piece {puzzle_id: $puzzle_id})
@@ -210,9 +194,6 @@ def visualize_puzzle(puzzle_id):
     print("  " + "─" * ((max_x + 1) * 6))
     print("  Leyenda: [N] = disponible  |  [XN] = faltante\n")
 
-# ─────────────────────────────────────────────
-#  ALGORITMO: ARMAR ROMPECABEZAS (BFS en Python)
-# ─────────────────────────────────────────────
 def solve_puzzle(puzzle_id, shape):
     print("\n══════════════════════════════════")
     print("  ALGORITMO: ARMAR ROMPECABEZAS")
@@ -244,13 +225,21 @@ def solve_puzzle(puzzle_id, shape):
         print(f"  No se encontraron conexiones en el rompecabezas {puzzle_id}.")
         return
 
-    # Construir lista de adyacencia en Python
+    # Construir lista de adyacencia bidireccional en Python
     adj = {}
     edge_data = {}
     for row in edges:
-        f, t = row["from_id"], row["to_id"]
+        f, t, d = row["from_id"], row["to_id"], row["direction"]
+        # Dirección original
         adj.setdefault(f, []).append(t)
         edge_data[(f, t)] = row
+        # Dirección inversa (para poder empezar desde cualquier pieza)
+        adj.setdefault(t, []).append(f)
+        edge_data[(t, f)] = {
+            "from_id":    t, "from_avail": row["to_avail"],
+            "direction":  INVERSE_DIRECTION[d],
+            "to_id":      f, "to_avail":   row["from_avail"],
+        }
 
     # BFS desde la pieza inicial
     visited = {start_id}
@@ -292,9 +281,6 @@ def solve_puzzle(puzzle_id, shape):
     else:
         print("\n  ✓ Rompecabezas completo. Todas las piezas disponibles.")
 
-# ─────────────────────────────────────────────
-#  LISTAR Y SELECCIONAR ROMPECABEZAS
-# ─────────────────────────────────────────────
 def list_puzzles():
     return run("MATCH (r:Puzzle) RETURN r.id AS id, r.name AS name, r.shape AS shape ORDER BY r.id")
 
@@ -318,9 +304,6 @@ def select_puzzle():
     print(f"  Rompecabezas seleccionado: {match[0]['name']}\n")
     return pid, shape
 
-# ─────────────────────────────────────────────
-#  MENÚ PRINCIPAL
-# ─────────────────────────────────────────────
 def menu():
     init_db()
 
@@ -381,7 +364,7 @@ def menu():
             if not puzzle_id:
                 puzzle_id, shape = select_puzzle()
             if puzzle_id:
-                create_connections(shape)
+                create_connections(puzzle_id, shape)
 
         elif opt == "4":
             if not puzzle_id:
